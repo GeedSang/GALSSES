@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>骑行智能眼镜信息呈现实验</title>
+  <style>
+    *{box-sizing:border-box}html,body,#app,#viewer{width:100%;height:100%;margin:0;overflow:hidden}
+    body{font-family:Inter,"Microsoft YaHei",sans-serif;background:#071015;color:#fff}
+    #viewer{position:absolute;inset:0;cursor:grab;touch-action:none}#viewer.look{cursor:grabbing}canvas{display:block}
+    .labels{position:absolute!important;inset:0;pointer-events:none}
+    .bar,.panel,.help,.status{position:absolute;z-index:10;background:rgba(7,16,21,.86);border:1px solid #ffffff24;backdrop-filter:blur(12px);box-shadow:0 8px 28px #0005}
+    .bar{top:14px;left:14px;right:14px;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px}
+    .title{font-weight:750;margin-right:auto}.bar label{display:flex;align-items:center;gap:7px;font-size:13px;color:#cbd6dd}
+    input,button{font:inherit;border-radius:6px;border:1px solid #ffffff2d}input{width:140px;padding:8px 10px;color:#fff;background:#ffffff12;outline:none}
+    button{padding:8px 12px;color:#fff;background:#ffffff12;cursor:pointer}button:hover{background:#ffffff20}button.primary{background:#68e5bf;color:#06110d;border-color:#68e5bf;font-weight:700}
+    .help{top:82px;left:14px;max-width:390px;padding:10px 12px;border-radius:7px;color:#d7e0e6;font-size:12px;line-height:1.55}
+    .status{top:82px;right:14px;padding:9px 12px;border-radius:7px;color:#aeeed9;font-size:12px;max-width:360px}
+    .panel{left:14px;right:14px;bottom:14px;display:flex;align-items:center;gap:10px;padding:12px;border-radius:8px;overflow-x:auto}
+    .panel-intro{width:130px;flex:0 0 auto;color:#aebcc5;font-size:12px;line-height:1.4}
+    .card,.placed,.ghost{display:flex;align-items:center;gap:9px;min-width:142px;padding:10px 12px;border:1px solid var(--c);border-radius:7px;background:color-mix(in srgb,var(--c) 17%,#12212a);user-select:none;cursor:grab}
+    .card:hover{transform:translateY(-2px)}.icon{display:grid;place-items:center;width:29px;height:29px;border-radius:50%;background:#0003;font-size:17px}.name{font-weight:700;font-size:13px}.value{font-size:11px;color:#c3ced4;margin-top:2px}
+    .placed{pointer-events:auto;min-width:126px;padding:8px 10px;box-shadow:0 6px 22px #0008,0 0 18px color-mix(in srgb,var(--c) 28%,transparent)}
+    .ghost{display:none;position:fixed;z-index:100;pointer-events:none;transform:translate(-50%,-50%);box-shadow:0 12px 35px #000a}.ghost.on{display:flex}
+    .overlay{position:absolute;z-index:50;inset:0;display:grid;place-items:center;background:#071015}.overlay.hide{display:none}.box{max-width:600px;padding:24px;border:1px solid #ffffff24;border-radius:8px;background:#121d24;text-align:center;line-height:1.6}.error{color:#ff9c9c}
+    @media(max-width:800px){.bar{flex-wrap:wrap}.title{width:100%}.help{top:128px;right:14px;max-width:none}.status{display:none}.panel-intro{display:none}}
+  </style>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<main id="app">
+  <div id="viewer"></div>
+  <header class="bar">
+    <div class="title">骑行智能眼镜 · 信息呈现位置实验</div>
+    <label>被试编号 <input id="subject" placeholder="例如 P001" maxlength="40"></label>
+    <button id="export" class="primary">导出 CSV</button><button id="reset">重置</button>
+  </header>
+  <aside class="help"><b>操作：</b>从底部拖动信息卡到你希望它出现的位置。拖动画面空白处可环顾，滚轮缩放；已放置卡片可再次拖动。</aside>
+  <div id="status" class="status">正在加载全景图…</div>
+  <section class="panel">
+    <div class="panel-intro">拖入场景，选择你希望看到的位置</div>
+    <div class="card" data-type="heart_rate" data-name="心率" data-icon="♥" data-value="148 bpm" data-color="#ff6073" style="--c:#ff6073"><span class="icon">♥</span><span><div class="name">心率</div><div class="value">148 bpm</div></span></div>
+    <div class="card" data-type="power" data-name="功率" data-icon="⚡" data-value="236 W" data-color="#ffc552" style="--c:#ffc552"><span class="icon">⚡</span><span><div class="name">功率</div><div class="value">236 W</div></span></div>
+    <div class="card" data-type="navigation" data-name="导航箭头" data-icon="➜" data-value="80 m 后右转" data-color="#61d8ff" style="--c:#61d8ff"><span class="icon">➜</span><span><div class="name">导航箭头</div><div class="value">80 m 后右转</div></span></div>
+    <div class="card" data-type="rear_vehicle_warning" data-name="后方来车预警" data-icon="!" data-value="左后方来车" data-color="#b896ff" style="--c:#b896ff"><span class="icon">!</span><span><div class="name">后方来车预警</div><div class="value">左后方来车</div></span></div>
+  </section>
+  <div id="ghost" class="ghost"></div>
+  <div id="loading" class="overlay"><div class="box">正在加载 <b>panorama.jpg</b>…</div></div>
+  <div id="fatal" class="overlay hide"><div class="box"><h2 class="error">全景图加载失败</h2><p>本地图片和在线示例图均无法读取。请检查网络，或把 <b>panorama.jpg</b> 上传到本页面同一目录。</p></div></div>
+</main>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {CSS2DObject,CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js';
+
+const viewer=document.querySelector('#viewer'),subject=document.querySelector('#subject'),status=document.querySelector('#status'),ghost=document.querySelector('#ghost'),loading=document.querySelector('#loading'),fatal=document.querySelector('#fatal');
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.1,220),proxy=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.1,220);
+camera.position.set(0,0,0);proxy.position.set(0,0,1);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;viewer.append(renderer.domElement);
+const labels=new CSS2DRenderer();labels.setSize(innerWidth,innerHeight);labels.domElement.className='labels';viewer.append(labels.domElement);
+const controls=new OrbitControls(proxy,renderer.domElement);controls.target.set(0,0,0);controls.enablePan=false;controls.enableZoom=false;controls.enableDamping=true;controls.dampingFactor=.08;controls.rotateSpeed=-.3;
+const raycaster=new THREE.Raycaster(),ndc=new THREE.Vector2(),records=[],placed=new Map();let sphere=null,drag=null;
+const fallback='https://threejs.org/examples/textures/2294472375_24a3b8ef46_o.jpg';
+
+function loadPanorama(url,isFallback=false){new THREE.TextureLoader().load(url,tex=>{tex.colorSpace=THREE.SRGBColorSpace;sphere=new THREE.Mesh(new THREE.SphereGeometry(100,64,40),new THREE.MeshBasicMaterial({map:tex,side:THREE.BackSide}));scene.add(sphere);loading.classList.add('hide');status.textContent=isFallback?'未找到 panorama.jpg，当前使用在线示例全景图。':'全景已加载，请开始放置卡片。';},undefined,()=>{if(!isFallback){status.textContent='未找到 panorama.jpg，正在加载在线示例图…';loadPanorama(fallback,true)}else{loading.classList.add('hide');fatal.classList.remove('hide')}})}
+loadPanorama('./panorama.jpg');
+
+const dataOf=e=>({type:e.dataset.type,name:e.dataset.name,icon:e.dataset.icon,value:e.dataset.value,color:e.dataset.color});
+const markup=d=>`<span class="icon">${d.icon}</span><span><div class="name">${d.name}</div><div class="value">${d.value}</div></span>`;
+function begin(ev,d,obj=null){if(!sphere)return;ev.preventDefault();ev.stopPropagation();drag={d,obj};controls.enabled=false;if(obj)obj.element.style.opacity=.25;ghost.innerHTML=markup(d);ghost.style.setProperty('--c',d.color);ghost.classList.add('on');moveGhost(ev)}
+function moveGhost(ev){ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px'}
+function hit(x,y){const r=renderer.domElement.getBoundingClientRect();if(x<r.left||x>r.right||y<r.top||y>r.bottom)return null;ndc.set((x-r.left)/r.width*2-1,-(y-r.top)/r.height*2+1);raycaster.setFromCamera(ndc,camera);return raycaster.intersectObject(sphere,false)[0]||null}
+function end(ev){if(!drag)return;const h=hit(ev.clientX,ev.clientY);if(h)place(drag.d,h.point,drag.obj);else if(drag.obj)drag.obj.element.style.opacity=1;ghost.classList.remove('on');controls.enabled=true;drag=null}
+function makeObject(d){const e=document.createElement('div');e.className='placed';e.style.setProperty('--c',d.color);e.innerHTML=markup(d);const o=new CSS2DObject(e);e.addEventListener('pointerdown',ev=>begin(ev,d,o));scene.add(o);return o}
+function place(d,p,obj){const dir=p.clone().normalize();obj=obj||placed.get(d.type);if(!obj){obj=makeObject(d);placed.set(d.type,obj)}obj.position.copy(dir.multiplyScalar(72));obj.element.style.opacity=1;const n=obj.position.clone().normalize(),lon=THREE.MathUtils.radToDeg(Math.atan2(n.x,-n.z)),lat=THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(n.y,-1,1)));records.push({subject_id:subject.value.trim(),info_type:d.type,longitude_deg:lon.toFixed(6),latitude_deg:lat.toFixed(6),timestamp:new Date().toISOString()});status.textContent=`${d.name}：经度 ${lon.toFixed(2)}°，纬度 ${lat.toFixed(2)}°`;}
+document.querySelectorAll('.card').forEach(e=>e.addEventListener('pointerdown',ev=>begin(ev,dataOf(e),placed.get(e.dataset.type)||null)));window.addEventListener('pointermove',ev=>{if(drag)moveGhost(ev)});window.addEventListener('pointerup',end);
+renderer.domElement.addEventListener('pointerdown',()=>viewer.classList.add('look'));window.addEventListener('pointerup',()=>viewer.classList.remove('look'));
+renderer.domElement.addEventListener('wheel',ev=>{ev.preventDefault();if(drag)return;camera.fov=THREE.MathUtils.clamp(camera.fov+ev.deltaY*.035,35,95);camera.updateProjectionMatrix()},{passive:false});
+document.querySelector('#reset').onclick=()=>{if(!confirm('清空所有卡片和记录？'))return;for(const o of placed.values()){scene.remove(o);o.element.remove()}placed.clear();records.length=0;status.textContent='已清空卡片和记录。'};
+document.querySelector('#export').onclick=()=>{const sid=subject.value.trim();if(!sid){status.textContent='请先填写被试编号。';subject.focus();return}if(!records.length){status.textContent='暂无数据，请先放置卡片。';return}const cols=['subject_id','info_type','longitude_deg','latitude_deg','timestamp'],esc=v=>`"${String(v??'').replaceAll('"','""')}"`,rows=records.map(r=>cols.map(k=>esc(k==='subject_id'&&!r[k]?sid:r[k])).join(',')),blob=new Blob(['\uFEFF'+[cols.join(','),...rows].join('\r\n')],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`cycling-hud-${sid}.csv`;a.click();URL.revokeObjectURL(a.href)};
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();proxy.aspect=camera.aspect;proxy.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);labels.setSize(innerWidth,innerHeight)});
+function animate(){requestAnimationFrame(animate);controls.update();camera.lookAt(controls.target.clone().sub(proxy.position).normalize());renderer.render(scene,camera);labels.render(scene,camera)}animate();
+</script>
+</body>
+</html>
